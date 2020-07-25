@@ -1,0 +1,423 @@
+---
+title: "StartUps e Inversiones"
+author: "Rocio Mondaca / José Ignacio Musso / Rosa Painequeo"
+date: "4/29/2020"
+output:
+  html_document:
+    theme: default
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+# 1. INTRODUCCIÓN
+
+En los últimos años StartUps exitosas han acaparado la atención del mundo  de los negocios, por su misma naturaleza de crecimiento explosivo y espectacular, además de abundar en historias míticas sobre personas altamente visionarias que han logrado revolucionar la forma en la que se hacen las cosas en múltiples áreas de nuestra vida. Particularmente en Chile, algunas Start Ups como Cornershop y NotCo.  han destacado al obtener inversiones millonarias, lo que es indicativo de una alta expectativa de la rentabilidad de estos negocios. 
+
+En este innovador mercado, las inversiones, en cualquier etapa de desarrollo en la que se encuentre la compañía, representan una apuesta, y por lo tanto es de interés tanto del inversionista como del emprendedor que esta apuesta obtenga las mayores ganancias posibles. 
+
+Por ello se considera crucial conocer información más precisa que la anecdótica  entregada por los gurús del emprendimiento, a lo que las herramientas entregadas por la Minería de Datos nos permiten explorar las características que hacen a una Start Up existosa. 
+
+Además de los mercados, la dinámica de estos, las comparaciones con Start Ups de similares características, y otros criterios que podrían caracterizarlas, consideramos relevante la historia de las inversiones que han recibido tanto las que fueron exitosas como las que no, en espera de poder encontrar un patrón o característica común  a las de mayor éxito. 
+
+Se estudia el caso de las Start Ups Unicornio, y cuáles fueron las características que les permitió obtener las inversiones en cada etapa para realizar su modelo de negocio a cabalidad.
+
+# 2. DESCRIPCIÓN DE LOS DATOS Y EXPLORACIÓN INICIAL
+
+Los datos utilizados corresponden a dos datasets obtenidos de Kaggle, uno que indica los datos a las Startups o compañías, con 49438 observaciones y 18 variables, y otro que posee datos realacionados a las inversiones realizadas para cada Startup, cuenta con 114506 observaciones y 24 variables. Se comienza importando el dataset obtenido de Kaggle: https://www.kaggle.com/arindam235/startup-investments-crunchbase
+Mediante la librería "readxl" se importa el dataset contenido en un archivo Excel.
+
+Com:
+-Filas: Compañias
+-Columnas: Info General
+
+Inv:
+-Filas: Inversión
+-Columnas: Info General + Info Ronda + Info Inversionista
+
+```{r, warning=F}
+#Iniciación
+rm(list=ls())         #Limpia la lista de objetos 
+graphics.off()        #Limpia la lista de gráficos
+options(digits = 5)   #Número de dígitos a utilizar
+shell("cls")          #limpiar consola
+
+# paquetes necesarios, ejecutar solo en la primera ejecucion
+#install.packages("webshot")
+#install.packages("usmap")
+#install.packages("wordcloud2")
+
+library(tidyverse)
+library(ggplot2)
+library("readxl")
+library(forcats)
+library(usmap)
+library(wordcloud2)
+
+
+Com = read_excel("crunchbaseDataset.xlsx",sheet = "Companies") 
+#sheetRounds = read_excel("crunchbaseDataset.xlsx",sheet = "Rounds") 
+Inv = read_excel("crunchbaseDataset.xlsx",sheet = "Investments") 
+
+```
+
+Luego, pasamos a obvervar las variables de cada dataframe, para el caso de las compañias se tienen datos asociados a la identificacion de la compañía como su link, su nombre, categoría, mercado, pais, estado (lugar), region, ciudad y estado (como condición) que puede ser cerrada, operativa y adquirida , adicionalmente se tienen datos asociados a su fecha de fundación, incluyendo mes, trimestre y año, e información general de sus inversiones, tales como el total recaudado, la cantidad de rondas, su fecha de primera inversión y última.
+
+Por otra parte, el dataframe de inversiones tiene información relacionada a cadaa inversión realizada cada Startu, teniendo así información asociada a la compañía (nombre, mercado, pais, etc), identificación del inversionista, tal como su su link, nombre, categoría, mercado, pais, estado, region y ciudad, adicionalmente se tiene el tipo de inversión (seed, venture, crowfunding, etc), el tipo de ronda, y la fecha y monto de inversión.
+
+```{r}
+colnames(Com)
+colnames(Inv)
+# summary(Com)
+# summary(Inv)
+
+```
+
+## NA/Spread ANALISIS Y LIMPIEZA
+
+Continuando con la limpieza de los datos, se revisa principalmente los casos de NA's, en donde se eliminan los NA en columnas esenciales, tales como la categoría, mercado, estado, pais y fecha de fundación para la compañía y la categoría, mercado, pais,tipo de ronda, y monto de inversión para el caso de las inversiones. Luego se eliminan variables que poca información aportan, tales como la url y la fecha de la primera y ultima inversión para el caso de las compañías, el código de las rondas, el link de las rondas y el link del inversionista para el caso de las inversiones.
+
+Se corrobora adicionalmente que no existan datos duplicados y se eliminan las inversiones de Startups cuya información no se tiene en el dataframe de compañías. Quedando finalmente el dataframe de compañías con 33156 observaciones y 15 variables y el de inversiones con 82287 observaciones y 21 variables.
+
+```{r, fig.height=4,fig.width=8}
+##limpieza de datos
+#dimensiones originales
+ComNRowIni = nrow(Com)
+ComNColIni = ncol(Com)
+InvNRowIni = nrow(Inv)
+InvNColIni = ncol(Inv)
+
+#eliminar vacíos o NA en columnas esenciales
+Com <- Com %>% 
+  drop_na(category_list, market, status, country_code, founded_at)
+Inv <- Inv %>% 
+  drop_na(company_category_list, company_market, company_country_code, funding_round_type,raised_amount_usd)
+
+#eliminar columnas inutiles
+Com <- select(Com, -homepage_url, -first_funding_at, -last_funding_at)
+Inv <- select(Inv, -funding_round_code, -funding_round_permalink, -investor_permalink)
+
+#eliminar duplicados
+Com <- Com[!duplicated(Com$permalink), ]
+Inv <- unique(Inv)
+
+#eliminar inversiones cuya compañia no existe en Com
+Inv<-Inv[Inv$company_permalink %in% Com$permalink,]
+
+## graficar NA's por columna
+# Com
+na_countCom <- sapply(Com, function(x) sum(is.na(x)))
+na_countCom <- rownames_to_column(data.frame(na_countCom))
+
+ggplot(na_countCom, var="na_countCom", aes(x=rowname, y=na_countCom)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=45, vjust=1, hjust=1.1))+
+  geom_hline(yintercept=nrow(Com), linetype="dashed", color = "red", size=1) +
+  ggtitle("Com: NA frequency per variable")
+
+# Inv
+na_countInv <- sapply(Inv, function(x) sum(is.na(x)))
+na_countInv <- rownames_to_column(data.frame(na_countInv))
+
+ggplot(na_countInv, var="na_count", aes(x=rowname, y=na_countInv)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=45, vjust=1, hjust=1.1))+
+  geom_hline(yintercept=nrow(Inv), linetype="dashed", color = "red", size=1) +
+  ggtitle("Inv: NA frequency per variable")
+
+#dimensiones finales
+ComNRowFin = nrow(Com)
+ComNColFin = ncol(Com)
+InvNRowFin = nrow(Inv)
+InvNColFin = ncol(Inv)
+```
+
+
+
+## market ANALISIS
+Se comienza el análisis de la base con las variables que parecen ser de mayor interés. En primer lugar se analizan los mercados a los que pertenecen las startups. La variable market nos indica que las startups pertenecen a una entre 720 categorías, para simplificar el estudio de estas se consideran los 20 que más se repiten. Se encuentra que la categoría "Software" y "biotechnology" corresponden a poco más de un 40% de las startups de la base. 
+
+```{r, , fig.height=4,fig.width=8}
+markets <- as.factor(Com$market) # convertir columna a factor
+#length(unique(markets)) #720
+marketFreqs <- as.data.frame(table(markets)) # sacar frecuencia y convertir a dataframe
+topMarketFreqs <- marketFreqs %>% # seleccionar top20 segun frecuencia
+  top_n(20, Freq) %>%
+  arrange(-Freq)
+
+#Frecuancia relativa
+tFreqMkt = sum(topMarketFreqs$Freq)
+topMarketFreqs$relFreq = round(topMarketFreqs$Freq/tFreqMkt*100,4)
+
+ggplot(topMarketFreqs, aes(x=reorder(markets, Freq), y=Freq, label = Freq)) + # plotear
+  ggtitle("Market Relative Frequency") +
+  xlab("top 20 markets")+
+  coord_flip() +
+  theme_minimal() +
+  geom_bar(stat="identity", fill="lightgreen") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))
+  
+
+#topMarketFreqs[1:40,]
+
+```
+
+La distribución de markets también puede visualizarse como una nube de palabras.
+```{r}
+#Nube de palabaras
+
+mktFrec = as.data.frame(table(Com$market))
+wordcloud2(data=mktFrec)
+```
+
+## country_code ANALISIS
+Explorando la variable "country_code" que indica el país donde se funda la startup se encuentra que la variable "USA" es la de mayor frecuencia. USA concentra un 71% de las startups de la base, seguido muy de lejos por Gran Bretaña, con un 6% de las empresas en la base.
+```{r, fig.height=4,fig.width=8}
+country_codes <- as.factor(Com$country_code) # convertir columna a factor
+country_codesFreqs <- as.data.frame(table(country_codes)) # sacar frecuencia y convertir a dataframe
+topcountry_codeFreqs <- country_codesFreqs %>% # seleccionar top20 segun frecuencia
+  top_n(20, Freq) %>%
+  arrange(-Freq)
+
+#Frecuancia relativa
+tFreqCountry = sum(topcountry_codeFreqs$Freq)
+topcountry_codeFreqs$relFreq = round(topcountry_codeFreqs$Freq/tFreqCountry*100,4)
+
+
+ggplot(topcountry_codeFreqs, aes(x=reorder(country_codes, Freq), y=Freq, label = Freq)) + # plotear
+  ggtitle("country_codes Frequency") +
+  xlab("top 20 country_codes")+
+  coord_flip() +
+  theme_minimal() +
+  geom_bar(stat="identity", fill="lightblue") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))
+
+#topcountry_codeFreqs[1:40,]
+
+
+```
+
+## region ANALISIS
+Se explora la variable "region", que indica la region o zona de un país donde se fundó la startup. Se busca identificar aquellas zonas donde surgen más startups. Se destaca a la bahía de San Francisco como el área donde se fundan más empresas de la base, seguramente por la existencia del prinmcipal polo tecnológico del mundo:Sillicon Valley.
+```{r, fig.height=4,fig.width=8}
+regions <- as.factor(Com$region) # convertir columna a factor
+regionsFreqs <- as.data.frame(table(regions)) # sacar frecuencia y convertir a dataframe
+topregionFreqs <- regionsFreqs %>% # seleccionar top20 segun frecuencia
+  top_n(20, Freq) %>%
+  arrange(-Freq)
+
+ggplot(topregionFreqs, aes(x=reorder(regions, Freq), y=Freq, label = Freq)) + # plotear
+  ggtitle("regions Frequency") +
+  coord_flip() +
+  theme_minimal() +
+  geom_bar(stat="identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))
+```
+
+
+## state_code ANALISIS
+Dados los resultados anteriores se explora la distribución de las startups por estados de USA y Canadá gracias a la variable "state_code". Se encuentra que la mayor parte de las startups en estos países se encuentran en el estado CA, correspondiente a California. Esto podría ser explicado por la influencia de Sillicon Valley y su relación con las empresas de Software, que como se encontró anteriormente corresponde al sector de mayor frecuencia en la base.
+
+```{r, fig.height=4,fig.width=8}
+state_codes <- as.factor(Com$state_code) # convertir columna a factor
+state_codesFreqs <- as.data.frame(table(state_codes)) # sacar frecuencia y convertir a dataframe
+topstate_codesFreqs <- state_codesFreqs %>% # seleccionar top20 segun frecuencia
+  top_n(20, Freq) %>%
+  arrange(-Freq)
+
+ggplot(topstate_codesFreqs, aes(x=reorder(state_codes, Freq), y=Freq, label = Freq)) + # plotear
+  ggtitle("regions Frequency") +
+  coord_flip() +
+  theme_minimal() +
+  geom_bar(stat="identity", fill="skyblue") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))
+
+```
+
+En el siguiente mapa es más claro observar la distribución de las startups por estado en USA.
+```{r, warning=FALSE}
+state_codesFreqs2 <- state_codesFreqs
+
+state_codesFreqs2 <- state_codesFreqs2 %>% 
+  rename(value = Freq)
+
+fipsDF <- statepop # dataframe con fips de estados
+df0 <- merge(state_codesFreqs2, fipsDF, by.x="state_codes", by.y="abbr")
+
+
+plot_usmap(regions = "states",
+           data = df0, values = "value", color = "black") +
+  scale_fill_continuous(name = "StartUps (2014)", label = scales::comma, low="lightyellow", high="red",na.value = "grey") +
+  theme(legend.position = "right")+
+  ggtitle("Startups fundadas en cada estado")
+
+
+```
+
+## Cantidad de Startups iniciadas por año con su estado actual
+La mayor cantidad de startups de la base (90.5%), corresponden a empresas fundadas desde el año 2000 al 2014 y un 48% a empresas fundadas desde el año 2010. Esto quiere decir que en el periodo de cinco años del 2010 a 2014 se fundaron 1.15 veces más empresas que en el periodo de 10 años de 2000 al 2009.
+
+Respecto al estado de las startups (al año 2014 ya que ese año corresponde a la última fecha registrada en la base que detalla las inversione) se encuentra que  la mayoria de las empresas se encuentran operativas. Este resultado es interesante, ya que según un artículo de investopedia (https://www.investopedia.com/articles/personal-finance/040915/how-many-startups-fail-and-why.asp) el 30% de los emprendimientos fracasan en menos de 2 años, el 50% lo hace en menos de 5 y solo un 25% sobrevive mas de 15 años. Se esperaría entonces, una mayor cantidad de empresas en estado "closed". Para trabajar con estos datos en un futuro debería considerarse un muestreo estratificado.
+
+```{r, fig.height=4,fig.width=8, warning=FALSE}
+#Cantidad por años
+Com2<-Com[Com$founded_year>1979,]
+  
+ggplot(data=Com2, aes(x=founded_year, fill=status)) +
+  geom_bar(stat="count", color="black")+
+  labs(colour = "Estado",x="Año",y="Cantidad",title="Cantidad de Startups iniciadas por año con su estado actual")+
+  scale_fill_brewer(palette = "Set1")
+
+
+#Frecuencia relativa de años
+foundedYearFreqs = as.data.frame(table(Com2$founded_year))
+colnames(foundedYearFreqs) =  c("year", "Freq")
+foundedYearFreqs$year = as.numeric(as.character(foundedYearFreqs$year))
+
+tFreqYear = sum(foundedYearFreqs$Freq)
+foundedYearFreqs$relFreq = round(foundedYearFreqs$Freq/tFreqYear*100,4)
+
+#Tabla con frecuencia y frecuencia realtiva
+#foundedYearFreqs[order(-foundedYearFreqs$year),]
+
+#Porcentaje de startups fundadas desde el 2010
+#p1 = sum(foundedYearFreqs[foundedYearFreqs$year>=2010,]$relFreq) #48.45%
+#Porcentaje de startups fundadas desde el 2000
+#p2 = sum(foundedYearFreqs[foundedYearFreqs$year>=2000,]$relFreq) #90.498%
+#Relacion periodo 10-14 con 00-09
+#p1/(p2-p1) #1.1524
+```
+
+## investor ANALISIS
+Al analizar a los inversores de mayor frecuencia se observa que no existen inversionistas que concentren una parte importante del total de frecuencias de inversiones. Analizar si la inversion de alguno de ellos afectan al éxito de una empresa será una de las tareas a trabajar a futuro.
+```{r, fig.height=4,fig.width=8}
+investor_names <- as.factor(Inv$investor_name) # convertir columna a factor
+investor_nameFreqs <- as.data.frame(table(investor_names)) # sacar frecuencia y convertir a dataframe
+topinvestor_namesFreqs <- investor_nameFreqs %>% # seleccionar top20 segun frecuencia
+  top_n(20, Freq) %>%
+  arrange(-Freq)
+
+ggplot(topinvestor_namesFreqs, aes(x=reorder(investor_names, Freq), y=Freq, label = Freq)) + # plotear
+  ggtitle("investor_names Frequency") +
+  coord_flip() +
+  theme_minimal() +
+  geom_bar(stat="identity", fill="lightblue") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))
+```
+
+## total funding ANALISIS
+Luego, se observa el monto total de inversiones en dólares agrupadas por el estado de las startups mediante un gráfico de densidad. A partir de esto, es posible ver que en el caso de las Startups cerradas y operativas su comportamiento es similar en donde la gran parte de las Startups tienen inversiones inferiores al millón de dolares, teniendo además un monto total de inversiones ligeramente mayor el caso de las Startups operativas. En cambio el caso de las Startups cuyo estado es adquirida, es posible observar que su curva de densidad es más plana, siendo notablemente mayor el monto total invertido.
+
+```{r, fig.height=4,fig.width=8, warning=FALSE}
+#GRAFICO DENSIDAD POR TOTAL FUNDINGS
+ggplot(Com, aes(funding_total_usd))+
+  geom_density(aes(fill=factor(status)), alpha=0.8) + 
+  labs(title="Gráfico de densidad", 
+       subtitle="Inversiones totales agrupadas por el estado de la startup",
+       x="Monto inversiones [USD]",
+       fill="Estado")+
+  xlim(c(0, 10000000))
+```
+
+## INFO DE STARTUPS UNICORNIO
+Un startup unicorno es una compañia privada con una valoración sobre USD $1 billion. 
+
+```{r}
+# importar dataset con startups unicorn
+Unicorns = read_excel("unicorns.xlsx",sheet = "Unicorns") 
+str(Unicorns)              # Reconocer la estrucctura de los datos
+
+# agregar columna binaria "unicorn"
+Com$unicorn <- ifelse(Com$name %in% Unicorns$Company,1,0)
+
+table(Com$unicorn)
+UnicornsInfo <- Com %>%
+  filter(unicorn == 1) %>%
+  select(name, market, funding_total_usd, status)
+
+#UnicornsInfo
+```
+
+Por lo tanto en la base de datos se tienen solo 127 startups unicornios.
+
+### Unicorn por market ANALISIS
+Se analiza la distribucion del total de inversiones en una startup unicornio en los markets de mayor frecuencia. Se aprecia que las categorias de Travel y E-Commerce poseen una mayor varianza en las inversiones, mientras que en las demás categorías se observa que los montos invertidos en ellas son parecidos entre empresas del mismo market, con la excepción de algunos outliers visibles en el gráfico.
+
+```{r, fig.height=4,fig.width=8}
+#Unicorn por market
+unicDB = Com[Com$unicorn==1, ]
+unicDB$market = as.factor(unicDB$market)
+ 
+mktUnicFrec = as.data.frame(table(unicDB$market))
+mktUnicFrec = mktUnicFrec[order(-mktUnicFrec$Freq) & mktUnicFrec$Freq>2,]
+
+ggplot(filter(unicDB, market %in% mktUnicFrec$Var1), aes(x=funding_total_usd, y = market))+
+  geom_boxplot(fill="khaki")+
+  ggtitle("Distribucion de total_funding_usd en markets mas comunes de unicornios")
+ 
+```
+
+### Markets de unicorn ANALISIS
+Mediante una nube de palabras se muestran los markets de mayor frecuencia en unicorns. Se destaca Analytics y Biotecnnology como los markets más frecuentes.
+```{r}
+#Nube de palabaras
+library(htmlwidgets)
+library(webshot)
+
+mktUnicFrec2 = as.data.frame(table(unicDB$market))
+wc2 = wordcloud2(mktUnicFrec2)
+saveWidget(wc2, 'wc2.html', selfcontained = F)
+webshot('wc2.html', 'wc2.png', vwidth=700,vheight=500, delay = 5)
+
+```
+
+### Unicorn por Rondas ANALISIS
+Se explora la distribucion de las rondas que alcanzan los unicorns. Se encuentra que el 78.7% de los unicorns solo llegaron hasta la cuarta ronda de financiamiento. Esto podría indicar a priori que el éxtito de una empresa no se mide con las rondas de financiamiento que logra, o que las unicorns son detectadas en las primeras rondas de financiamiento done alzcanzan montos suficientes para desarrollarse en el tiempo.
+
+```{r, fig.height=4,fig.width=8}
+#Rondas a las que llegan los unicorns
+unicRounds = as.data.frame(table(unicDB$funding_rounds))
+colnames(unicRounds) = c("Round", "Freq")
+ggplot(unicRounds, aes(x=Round, y=Freq))+
+  geom_bar(stat = "identity", fill="coral")+
+  ggtitle("Total de rondas a las que llegan las unicorns")
+
+unicRounds$relFreq = round(unicRounds$Freq/sum(unicRounds$Freq)*100,2)
+unicRounds
+```
+
+# 3. TEMÁTICA CENTRAL Y COMO SE ABORDARÁ A FUTURO
+
+## Temática Central
+
+El objetivo de este proyecto es el de identificar las variables más importantes que definen cuando una Startup será exitosa.
+Si bien esto no pretende ser un instructivo para tener éxito al emprender, puede ser de utilidad tanto para los emprendedores como los inversionistas.
+
+Emprendedores: Puede ser útil para servir como indicador de la probabilidad de éxito en a lo largo de las fases de inversión de la Startup.
+
+Inversionistas: Evaluar la probabilidad de éxito de nuevos proyectos de manera rápida y visualizar el estado de compañias según variables en la fase de funding.
+
+## Trabajo a futuro
+
+La limpieza y exploración de datos realizada en este hito permite dar paso a un análisis más profundo.
+El siguiente paso dentro de la investigación consiste en definir cuando una Startup es exitosa, si bien existen estudios que definen esto, hay que adaptar los criterios a los datos que se tienen. Un approach posible es el de definir 3 variables y generar una regla en que califica como exitosa si cumple al menos 2 de las tres variables. En esta parte es posible que sea necesario cruzar los datos que se tienen con otro dataset, como se realizó para obtener información de los unicornios.
+
+Luego se identificarán las variables más explicativas en terminos de variabilidad o que aporten mayor información. PCA y Random Forest podrían ser utilizados en esta parte.
+
+Posteriormente se aplicarán múltiples clasificadores, utilizando las etiquetas generadas de si la Startup es exitosa o no, y se otorgará distintos valores de certeza según clasificador, para así evaluar rendimientos. Regresión lineal y SVM puede aplicarse en esta parte
+
+## Aterrizar métricas a territorio nacional
+
+En la exploración inicial se identificó que gran parte de los datos corresponden a Startups de Estados Unidos, por lo que, una vez identificadas las variables escenciales y los threshold que definen el éxito de las Startups, estos serán traducidos al territorio nacional. Esto quiere decir que se realizará un ajuste proporcional a indicadores nacionales como PIB, inversiones/año y otros datos económicos que sean de útilidad para generar un factor de escala entre los datos del dataset y el escenario local.
+
+# 4. VIDEO DE PRESENTACIÓN
+Archivo en Google Drive: https://drive.google.com/file/d/1-x6hB6xFrwA0I7eNcFlmvFokcf_jL2tF/view?usp=sharing
+
+# 5. CONTRIBUCIÓN DE CADA MIEMBRO
+
+Rocío Mondaca: Limpieza de datos, gráfico de cantidad de startups anuales por estado y gráfico de densidad de inversiones, redacción de introducción y descripción de los datos.
+
+José Ignacio Musso: Gráficos de los NA (posterior a limpieza), algunos histogramas de variables, mapa de Estados Unidos, agregar columna binaria con info de unicornios, redacción parte 3 del informe.
+
+Rosa Painequeo:Gráficos con la variable unicorn y nubes de palabras, análisis e interpretación de la exploración de datos (redacción de parte 2 del informe, después de limpieza de datos), tablas de frecuencia relativa y cálculos de porcentajes.
+
+
